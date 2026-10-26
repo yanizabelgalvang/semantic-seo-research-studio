@@ -1,68 +1,64 @@
+import re,time,unicodedata
 from collections import Counter
 from functools import lru_cache
-import re, time
+from urllib.parse import quote
 import pandas as pd
 import requests
 import spacy
-
+from .demanda import norm
 API='https://es.wikipedia.org/w/api.php'
-HEADERS={'User-Agent':'SemanticSEOResearchStudio/0.2 (educational research; contact: https://github.com/yanizabelgalvang/semantic-seo-research-studio)','Accept':'application/json'}
-SEO_WORDS={'seo','posicionamiento web','posicionamiento en buscadores','optimización de motores de búsqueda','marketing digital','search engine optimization'}
-SEO_BAD={'catedral','zaragoza','seo de urgel','ornitología','birdlife','apellido','aragon','aragón','cataluña','lerida','lérida','la seo'}
+HEADERS={'User-Agent':'SemanticSEOResearchStudio/0.3 (research; https://github.com/yanizabelgalvang/semantic-seo-research-studio)'}
 @lru_cache(maxsize=1)
-def model():
-    try: return spacy.load('es_core_news_sm')
-    except OSError as exc: raise RuntimeError('Falta el modelo es_core_news_sm. Revisa requirements.txt y los logs de instalación.') from exc
+def model():return spacy.load('es_core_news_sm')
 
-def _request(params):
-    for attempt in range(3):
+def _api(params):
+    for i in range(3):
         try:
-            r=requests.get(API,params={**params,'format':'json','formatversion':2},headers=HEADERS,timeout=18)
-            if r.status_code in (429,500,502,503):
-                time.sleep(min(int(r.headers.get('Retry-After','2')) if r.headers.get('Retry-After','2').isdigit() else 2,5)*(attempt+1));continue
-            r.raise_for_status();return r.json()
-        except (requests.RequestException,ValueError):
-            if attempt==2:return {}
-    return {}
+            r=requests.get(API,params={**params,'format':'json','formatversion':2},headers=HEADERS,timeout=20)
+            if r.status_code in (429,503):time.sleep(min(2**i,4));continue
+            r.raise_for_status();return r.json(),''
+        except (requests.RequestException,ValueError) as e:
+            if i==2:return {},str(e)
+    return {},'Servicio no disponible'
 
-def wikipedia_texts(topic, max_pages=5):
-    """Búsqueda contextual: nunca usar SEO aislado como página enciclopédica."""
-    t=topic.strip().lower()
-    is_seo=any(x in t for x in ('seo','posicionamiento web','posicionamiento en buscadores'))
-    queries=(["intitle:Posicionamiento en buscadores",'"optimización en motores de búsqueda"', '"marketing en buscadores"'] if is_seo else [topic, f'"{topic}"'])
-    candidates=['Posicionamiento en buscadores','Mercadotecnia en motores de búsqueda','Mercadotecnia digital'] if is_seo else []
-    for q in queries:
-        data=_request({'action':'query','list':'search','srsearch':q,'srlimit':5,'srnamespace':0})
-        candidates.extend(x.get('title','') for x in data.get('query',{}).get('search',[]))
-    results=[];seen=set()
-    for title in candidates:
-        if not title or title.lower() in seen:continue
-        seen.add(title.lower())
-        if is_seo and (any(b in title.lower() for b in SEO_BAD) or title.strip().lower()=='seo'):continue
-        data=_request({'action':'query','prop':'extracts|pageprops','explaintext':1,'exintro':1,'redirects':1,'titles':title})
-        for p in data.get('query',{}).get('pages',[]):
-            body=p.get('extract','');name=p.get('title','')
-            if p.get('missing') or 'disambiguation' in p.get('pageprops',{}) or len(body)<180:continue
-            if is_seo:
-                context=(name+' '+body[:2000]).lower()
-                if any(b in name.lower() for b in SEO_BAD):continue
-                if not any(x in context for x in ('buscador','motores de búsqueda','optimización','marketing digital','search engine')):continue
-            results.append({'titulo':name,'texto':body,'url':'https://es.wikipedia.org/wiki/'+name.replace(' ','_'),'fuente':'Wikipedia (selección contextual)'})
-            if len(results)>=max_pages:return results
-    return results
+def wikipedia_texts(topic,max_pages=6):
+    """Wikipedia es un corpus complementario; requiere coincidencia temática explícita."""
+    search,err=_api({'action':'query','list':'search','srsearch':topic,'srlimit':15,'srnamespace':0})
+    if err:return [],[f'Wikipedia: {err}']
+    seed=set(norm(topic).split());seed={x for x in seed if len(x)>3 and x not in ('para','sobre','mexico','peru')}
+    terms={x for x in seed}
+    if 'seo' in norm(topic) or 'posicionamiento web' in norm(topic):terms.update(('buscadores','busqueda','optimizacion','marketing','posicionamiento'))
+    results=[];rejected=[]
+    for hit in search.get('query',{}).get('search',[]):
+        title=hit.get('title','')
+        if not title:continue
+        title_norm=norm(title)
+        if title_norm in ('seo','la seo') or 'desambiguacion' in title_norm:rejected.append((title,'ambiguo'));continue
+        data,fetch_err=_api({'action':'query','prop':'extracts|pageprops','explaintext':1,'exintro':1,'redirects':1,'titles':title})
+        if fetch_err:rejected.append((title,'error_red'));continue
+        for page in data.get('query',{}).get('pages',[]):
+            body=page.get('extract','');name=page.get('title','')
+            if len(body)<200 or 'disambiguation' in page.get('pageprops',{}):rejected.append((name,'poco_texto_o_desambiguacion'));continue
+            context=norm(name+' '+body[:2000]);matched=sum(1 for x in terms if re.search(r'\b'+re.escape(x)+r'\b',context))
+            if matched<2:rejected.append((name,'contexto_insuficiente'));continue
+            results.append({'titulo':name,'texto':body,'url':'https://es.wikipedia.org/wiki/'+quote(name.replace(' ','_')),'coincidencias':matched,'fuente':'Wikipedia'})
+            if len(results)>=max_pages:break
+        if len(results)>=max_pages:break
+    return results,rejected
 
-def analyze(documents):
-    nlp=model();entities=Counter();concepts=Counter()
-    for d in documents:
-        doc=nlp(d['texto'][:100000])
-        for ent in doc.ents:
-            value=re.sub(r'\s+',' ',ent.text).strip()
-            if len(value)<3 or any(b in value.lower() for b in SEO_BAD):continue
-            if value.lower()=='seo' and ent.label_=='LOC':continue
-            entities[(value,ent.label_)]+=1
-        for ch in doc.noun_chunks:
-            words=[w.lemma_.lower() for w in ch if not w.is_stop and not w.is_punct and w.pos_ in ('NOUN','PROPN','ADJ')]
-            val=' '.join(words).strip()
-            if len(val)<4 or len(words)>6 or any(b in val for b in SEO_BAD):continue
-            concepts[val]+=1
-    return (pd.DataFrame([{'entidad':k[0],'tipo':k[1],'frecuencia':v} for k,v in entities.most_common(150)],columns=['entidad','tipo','frecuencia']),pd.DataFrame([{'concepto':k,'frecuencia':v} for k,v in concepts.most_common(200)],columns=['concepto','frecuencia']))
+def analyze(documents,topic):
+    nlp=model();ent=Counter();con=Counter();seed=set(norm(topic).split())
+    for source in documents:
+        doc=nlp(source['texto'][:80000]);source_text=norm(source['texto'][:2000])
+        for e in doc.ents:
+            value=e.text.strip(' \t\n.,;:()[]"\'')
+            if len(value)<3 or not any(c.isalpha() for c in value):continue
+            if value[0].islower() and len(value.split())==1 and e.label_ in ('PER','LOC'):continue
+            ent[(value,e.label_)]+=1
+        for chunk in doc.noun_chunks:
+            parts=[norm(t.lemma_) for t in chunk if t.pos_ in ('NOUN','PROPN','ADJ') and not t.is_stop and not t.is_punct]
+            phrase=' '.join(parts).strip()
+            if 4<=len(phrase)<=65 and len(parts)<=5:con[phrase]+=1
+    ents=pd.DataFrame([{'entidad':k[0],'tipo_spacy':k[1],'frecuencia':v,'estado':'sin_validar'} for k,v in ent.most_common(150)])
+    concepts=pd.DataFrame([{'concepto':k,'frecuencia':v} for k,v in con.most_common(200)])
+    return ents,concepts

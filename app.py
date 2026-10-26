@@ -1,75 +1,76 @@
-import io,zipfile
+import io,zipfile,hashlib
 import pandas as pd
 import streamlit as st
 from modules.demanda import load_semrush
+from modules.facetas import build
 from modules.spacy_nlp import wikipedia_texts,analyze
 from modules.wikidata import lookup
 from modules.openalex import search
-from modules.facetas import summarize
 
 COUNTRIES=['Perú','Colombia','México','Argentina','Chile','Bolivia','Ecuador','Uruguay','Paraguay','Venezuela','Costa Rica','Panamá','Guatemala','El Salvador','Honduras','Nicaragua','República Dominicana','Cuba']
 st.set_page_config(page_title='Semantic SEO Research Studio',page_icon='🔎',layout='wide')
 st.title('🔎 Semantic SEO Research Studio')
-st.caption('Prototipo 0.2 · CSV Semrush · spaCy · Wikipedia contextual · Wikidata · OpenAlex')
-st.warning('ACCESO NO PROTEGIDO: no subas datos confidenciales hasta implementar acceso privado. GitHub público no equivale a aplicación privada.')
+st.caption('Revisión técnica · Semrush CSV · spaCy · Wikipedia · Wikidata · OpenAlex')
+st.error('ACCESO NO PROTEGIDO: esta aplicación no implementa autenticación. No subas datos confidenciales ni la compartas como aplicación privada.')
 with st.sidebar:
     topic=st.text_input('Tema','Posicionamiento web')
     country=st.selectbox('País objetivo',COUNTRIES,index=2)
-    st.caption('Idioma de investigación: español. País del CSV confirmado por el usuario.')
-files=st.file_uploader('CSV de Semrush (uno o varios)',type=['csv'],accept_multiple_files=True)
+    st.caption('Idioma: español. Las métricas provienen exclusivamente de CSV Semrush.')
+files=st.file_uploader('CSV Semrush (uno o varios)',type=['csv'],accept_multiple_files=True)
 if files:
     try:
         df=load_semrush(files)
-        st.success(f'{len(df)} keywords únicas de {len(files)} CSV')
-        a,b,c=st.columns(3)
-        a.metric('Keywords',len(df));b.metric('Con volumen positivo',int(df.volume.gt(0).sum()));c.metric('Volumen no disponible',int(df.volume.isna().sum()))
-        st.dataframe(df,height=280)
-        facets=summarize(df)
-        st.subheader('Facetas × demanda (exploratorio)')
-        st.caption('Agrupación basada en reglas. Los volúmenes sumados son descriptivos, NO tráfico potencial ni demanda incremental.')
-        st.dataframe(facets)
-        confirmed=st.checkbox(f'Confirmo que los CSV corresponden a {country}')
+        st.success(f'{len(df)} keywords únicas importadas')
+        a,b,c,d=st.columns(4)
+        a.metric('Keywords',len(df));b.metric('Volumen positivo',int(df.volume.gt(0).sum()));c.metric('Volumen 0',int(df.volume.eq(0).sum()));d.metric('Sin dato',int(df.volume.isna().sum()))
+        st.dataframe(df,height=250,use_container_width=True)
+        detail,facets=build(df,topic)
+        st.subheader('Facetas provisionales × demanda')
+        st.info('Facetas generadas a partir de palabras de los CSV. Son etiquetas exploratorias, no clusters validados por SERP. La suma de volúmenes NO estima tráfico.')
+        st.dataframe(facets,use_container_width=True)
+        st.download_button('Descargar clasificación provisional',detail.to_csv(index=False).encode('utf-8-sig'),'keywords_clasificadas.csv','text/csv')
+        confirmed=st.checkbox(f'Confirmo que estos CSV corresponden a {country}')
+        fingerprint=hashlib.sha256((topic+country+''.join(f.name+hashlib.sha256(f.getvalue()).hexdigest() for f in files)).encode()).hexdigest()
         if st.button('Investigar con NLP',disabled=not confirmed,type='primary'):
-            with st.spinner('Buscando fuentes contextualizadas y procesando spaCy...'):
-                docs=wikipedia_texts(topic)
-                if not docs:
-                    st.error('No se recuperaron fuentes de Wikipedia verificables. No se genera análisis NLP sin corpus. Revisa conectividad o prueba otro tema.')
+            with st.spinner('Buscando artículos de Wikipedia y ejecutando spaCy...'):
+                docs,rejected=wikipedia_texts(topic)
+                if not docs:st.error('No se obtuvo un corpus pertinente de Wikipedia. No se simularán entidades. Prueba una semilla más general o revisa conectividad.')
                 else:
-                    ents,concepts=analyze(docs)
-                    st.session_state.results={'keywords':df,'facetas':facets,'entities':ents,'concepts':concepts,'sources':pd.DataFrame([{'titulo':d['titulo'],'url':d['url']} for d in docs]),'topic':topic,'country':country,'wikidata':pd.DataFrame(),'openalex':pd.DataFrame()}
-        if 'results' in st.session_state:
-            r=st.session_state.results
-            if r['topic']!=topic or r['country']!=country:
-                st.info('El tema o país cambió. Ejecuta de nuevo la investigación para actualizar los resultados.')
-            else:
-                st.subheader('Fuentes seleccionadas y resultados NLP')
-                st.dataframe(r['sources'])
-                t1,t2=st.tabs(['Entidades spaCy (sin validar)','Sintagmas nominales'])
-                with t1:st.dataframe(r['entities'])
-                with t2:st.dataframe(r['concepts'])
-                if st.button('Consultar Wikidata y OpenAlex (opcional)'):
-                    with st.spinner('Consultando fuentes abiertas con límites de peticiones...'):
-                        # Consultas contextualizadas, no términos NER aislados como "Seo".
-                        seed=['posicionamiento en buscadores','optimización de motores de búsqueda','Google'] if 'seo' in topic.lower() or 'posicionamiento' in topic.lower() else [topic]
-                        r['wikidata']=lookup(seed,max_terms=3)
-                        r['openalex']=search([f'"{topic}"',f'{topic} search engines'])
-                if not r['wikidata'].empty:st.subheader('Wikidata · candidatos sin verificar');st.dataframe(r['wikidata'])
-                if not r['openalex'].empty:st.subheader('OpenAlex · literatura por revisar');st.dataframe(r['openalex'])
-                def md_table(key):
-                    table=r[key]
-                    return table.head(30).to_markdown(index=False) if not table.empty else 'Sin resultados / no ejecutado'
-                report=(f"# Investigación exploratoria: {topic}\n\nPaís: {country}. Fuente de demanda: CSV Semrush.\n\n"
-                        f"## Keywords\n\n{md_table('keywords')}\n\n## Facetas × demanda (reglas exploratorias)\n\n{md_table('facetas')}\n\n"
-                        f"## Corpus validado por contexto\n\n{md_table('sources')}\n\n## Entidades spaCy (no verificadas)\n\n{md_table('entities')}\n\n"
-                        f"## Conceptos spaCy\n\n{md_table('concepts')}\n\n## Wikidata (QIDs candidatos)\n\n{md_table('wikidata')}\n\n"
-                        f"## OpenAlex (obras por revisar)\n\n{md_table('openalex')}\n\n## Limitaciones\n\n"
-                        "Prototipo: sin SERP verificada ni clustering por similitud de SERP. Las facetas son reglas iniciales; los QIDs y estudios requieren revisión. Volumen no es tráfico potencial.\n")
-                st.download_button('Descargar informe Markdown',report.encode('utf-8'),'research.md','text/markdown')
-                out=io.BytesIO()
-                with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
-                    z.writestr('research.md',report)
-                    for key in ('keywords','facetas','entities','concepts','sources','wikidata','openalex'):
-                        z.writestr(f'{key}.csv',r[key].to_csv(index=False))
-                st.download_button('Descargar ZIP de resultados',out.getvalue(),'semantic_research_v02.zip','application/zip')
+                    ents,concepts=analyze(docs,topic)
+                    st.session_state['research']={'fingerprint':fingerprint,'topic':topic,'country':country,'keywords':df,'facetas':facets,'clasificacion':detail,'entities':ents,'concepts':concepts,'sources':pd.DataFrame([{'titulo':d['titulo'],'url':d['url'],'coincidencias':d['coincidencias']} for d in docs]),'wikidata':pd.DataFrame(),'openalex':pd.DataFrame(),'rejected':pd.DataFrame(rejected,columns=['titulo','motivo'])}
+        r=st.session_state.get('research')
+        if r and r['fingerprint']==fingerprint:
+            st.subheader('Fuentes y análisis lingüístico')
+            st.dataframe(r['sources'],use_container_width=True)
+            with st.expander('Fuentes rechazadas y motivos'):st.dataframe(r['rejected'])
+            t1,t2=st.tabs(['Entidades sin verificar','Sintagmas nominales'])
+            with t1:st.dataframe(r['entities'],use_container_width=True)
+            with t2:st.dataframe(r['concepts'],use_container_width=True)
+            if st.button('Consultar Wikidata y OpenAlex'):
+                with st.spinner('Consultando fuentes abiertas...'):
+                    # No enviar NER bruto a Wikidata: consultas explícitas relacionadas con el tema.
+                    terms=[topic]+r['sources'].titulo.head(3).tolist()
+                    r['wikidata']=lookup(terms,topic)
+                    r['openalex']=search([topic,f'{topic} motores de búsqueda',f'{topic} marketing digital'],topic)
+            if not r['wikidata'].empty:
+                st.subheader('Wikidata: candidatos por revisar');st.dataframe(r['wikidata'])
+            if not r['openalex'].empty:
+                st.subheader('OpenAlex: publicaciones por revisar');st.dataframe(r['openalex'])
+            def table(name,n=30):
+                frame=r[name];return frame.head(n).to_markdown(index=False) if not frame.empty else 'No ejecutado / sin datos'
+            report=(f'# Investigación exploratoria: {topic}\n\nMercado: {country} · Idioma: español · Demanda: CSV Semrush\n\n'
+                    f'## Keywords\n\n{table("keywords")}\n\n## Facetas provisionales\n\n{table("facetas")}\n\n'
+                    f'## Fuentes Wikipedia\n\n{table("sources")}\n\n## Entidades spaCy (sin validar)\n\n{table("entities")}\n\n'
+                    f'## Conceptos spaCy\n\n{table("concepts")}\n\n## Wikidata (candidatos)\n\n{table("wikidata")}\n\n'
+                    f'## OpenAlex (metadatos por revisar)\n\n{table("openalex")}\n\n'
+                    '## Limitaciones\n\nSin SERP real ni análisis de competidores. Los QIDs no están verificados. Las facetas son provisionales. Las publicaciones no están validadas académicamente. Volumen no equivale a tráfico potencial.\n')
+            st.download_button('Descargar informe',report.encode('utf-8'),'research.md','text/markdown')
+            bundle=io.BytesIO()
+            with zipfile.ZipFile(bundle,'w',zipfile.ZIP_DEFLATED) as z:
+                z.writestr('research.md',report)
+                for name in ('keywords','facetas','clasificacion','sources','rejected','entities','concepts','wikidata','openalex'):
+                    z.writestr(name+'.csv',r[name].to_csv(index=False))
+            st.download_button('Descargar ZIP',bundle.getvalue(),'semantic_research.zip','application/zip')
+        elif r:st.info('El tema, país o los CSV cambiaron. Vuelve a ejecutar la investigación.')
     except Exception as exc:
-        st.error(f'Error al procesar CSV o ejecutar investigación: {exc}')
+        st.error(f'No se pudo procesar: {exc}')

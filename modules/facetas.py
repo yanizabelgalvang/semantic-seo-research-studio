@@ -1,27 +1,26 @@
-import re,unicodedata
+"""Facetas temáticas genéricas derivadas de keywords, no categorías SEO fijas."""
+import re
+from collections import Counter
 import pandas as pd
-FACETS={
- 'Fundamentos SEO':['seo','posicionamiento','buscador','search engine','optimización'],
- 'SEO técnico':['indexación','rastreo','robots','sitemap','canonical','core web vitals','velocidad'],
- 'Contenido y keywords':['contenido','keyword','palabras clave','redacción','semántica','blog'],
- 'Enlaces y autoridad':['backlink','enlaces','link building','autoridad'],
- 'Servicios y agencias':['agencia','servicio','consultor','precio','cotización','experto'],
- 'SEO local':['local','maps','google business','ciudad','méxico','tijuana','monterrey'],
- 'Analítica y herramientas':['analytics','search console','semrush','herramienta','medición'],
-}
-def fold(s):
-    s=unicodedata.normalize('NFKD',str(s).lower())
-    return ''.join(c for c in s if not unicodedata.combining(c))
-def facet_for(s):
-    t=fold(s)
-    matches=[(f,sum(1 for w in ws if fold(w) in t)) for f,ws in FACETS.items()]
-    best=max(matches,key=lambda x:x[1]);
-    if any(w in t for w in ('agencia','servicio seo','consultor seo')):return 'Servicios y agencias'
-    if any(w in t for w in ('sitemap','robots.txt','canonical','indexacion','rastreo')):return 'SEO técnico'
-    return best[0] if best[1] else 'Sin clasificar'
-def summarize(df):
-    if df.empty:return pd.DataFrame(columns=['faceta','keywords','volumen_medible','sin_datos'])
-    d=df.copy();d['faceta']=d.keyword.map(facet_for)
-    d['volumen_medible']=pd.to_numeric(d.volume,errors='coerce').fillna(0)
-    d['sin_datos']=d.volume.isna().astype(int)
-    return d.groupby('faceta',as_index=False).agg(keywords=('keyword','count'),volumen_medible=('volumen_medible','sum'),sin_datos=('sin_datos','sum')).sort_values('keywords',ascending=False)
+from .demanda import norm
+STOP=set('a al algo ante bajo con contra como de del desde donde el ella en entre es esta este hay la las lo los mas mi mis o para por que se ser sin sobre su sus tu un una uno y ya mexico peru colombia argentina chile'.split())
+
+def tokens(s):return [t for t in re.findall(r'[a-z0-9]+',norm(s)) if len(t)>2 and t not in STOP]
+
+def build(df,topic):
+    if df.empty:return pd.DataFrame(),pd.DataFrame()
+    seed=set(tokens(topic));counts=Counter()
+    for kw in df.keyword:counts.update(set(tokens(kw))-seed)
+    generic=set(['web','seo','google','search','engine']) if 'seo' in seed or 'posicionamiento' in seed else set()
+    candidates=[w for w,n in counts.most_common(18) if n>=2 and w not in generic]
+    # Se derivan etiquetas de los términos observados, sin diccionario sectorial prefijado.
+    def assign(kw):
+        t=set(tokens(kw))
+        hits=[w for w in candidates if w in t]
+        if not hits:return 'Tema central / sin subfaceta'
+        return 'Subtema: '+hits[0]
+    detail=df.copy();detail['faceta_provisional']=detail.keyword.map(assign)
+    detail['relevancia_semilla']=detail.keyword.map(lambda k:'directa' if seed & set(tokens(k)) else 'revisar')
+    summary=detail.groupby('faceta_provisional',as_index=False).agg(keywords=('keyword','count'),keywords_con_volumen=('volume',lambda x:int(x.gt(0).sum())),volumen_descriptivo=('volume','sum'))
+    summary=summary.sort_values('keywords',ascending=False)
+    return detail,summary

@@ -1,48 +1,48 @@
-import io, unicodedata
+import io, re, unicodedata
 import pandas as pd
 
-def clean(x):
-    s=unicodedata.normalize('NFKD',str(x).lower())
-    return ''.join(c for c in s if not unicodedata.combining(c)).strip()
+def norm(s):
+    return ''.join(c for c in unicodedata.normalize('NFKD',str(s).casefold()) if not unicodedata.combining(c)).strip()
 
-def parse_number(v):
-    s=str(v).strip().replace(' ','').replace('%','').replace('$','')
-    if not s or s.lower() in ('nan','n/a','-','none') or s.startswith('<'): return float('nan')
-    if ',' in s and '.' in s:
-        s=s.replace('.','').replace(',','.') if s.rfind(',')>s.rfind('.') else s.replace(',','')
-    elif ',' in s: s=s.replace(',','.') if len(s.split(',')[-1])!=3 else s.replace(',','')
-    elif '.' in s and len(s.split('.')[-1])==3: s=s.replace('.','')
-    try: return float(s)
-    except ValueError: return float('nan')
+def number(v):
+    if pd.isna(v): return float('nan')
+    s=str(v).strip().replace('\u00a0','').replace(' ','').replace('%','').replace('$','')
+    if s.lower() in ('','nan','none','n/a','-','nd'):return float('nan')
+    if s.startswith('<') or re.match(r'^\d+\s*-\s*\d+$',s):return float('nan')
+    if ',' in s and '.' in s: s=s.replace('.','').replace(',','.') if s.rfind(',')>s.rfind('.') else s.replace(',','')
+    elif ',' in s: s=s.replace(',','') if re.fullmatch(r'\d{1,3}(,\d{3})+',s) else s.replace(',','.')
+    elif '.' in s and re.fullmatch(r'\d{1,3}(\.\d{3})+',s):s=s.replace('.','')
+    try:return float(s)
+    except ValueError:return float('nan')
+
+ALIASES={'keyword':['keyword','palabra clave'],'volume':['volume','volumen','search volume','volumen de busqueda'],'kd':['keyword difficulty','kd %','kd','dificultad de la palabra clave','dificultad'],'intent':['intent','intencion','intencion de busqueda'],'cpc':['cpc','cpc (usd)','cpc (us$)']}
 
 def load_semrush(files):
-    aliases={'keyword':['keyword','palabra clave'],'volume':['volume','volumen','search volume'],'kd':['keyword difficulty','kd %','kd','dificultad'],'intent':['intent','intencion'],'cpc':['cpc','cpc (usd)']}
-    frames=[]
+    frames=[];warnings=[]
     for file in files:
-        df=None
-        for enc in ('utf-8-sig','utf-16','cp1252'):
-            try: txt=file.getvalue().decode(enc)
-            except UnicodeError: continue
-            for sep in (None,';',',','\t'):
+        raw=file.getvalue();found=None
+        for encoding in ('utf-8-sig','utf-16','cp1252'):
+            try: txt=raw.decode(encoding)
+            except UnicodeError:continue
+            for sep in (',',';','\t'):
                 try:
-                    tmp=pd.read_csv(io.StringIO(txt),sep=sep,engine='python',on_bad_lines='skip')
-                    if any(clean(c) in aliases['keyword'] for c in tmp.columns): df=tmp; break
-                except Exception: pass
-            if df is not None: break
-        if df is None: raise ValueError(f'{file.name}: no se detecta la columna Keyword / Palabra clave')
-        mapping={}
-        for col in df.columns:
-            for target,options in aliases.items():
-                if clean(col) in options: mapping[col]=target;break
-        df=df.rename(columns=mapping)
-        df['keyword']=df.keyword.astype(str).str.strip()
-        df=df[~df.keyword.isin(['','nan'])].copy()
-        for c in ('volume','kd','cpc'):
-            df[c]=df[c].map(parse_number) if c in df else float('nan')
-        if 'intent' not in df: df['intent']=''
-        df['source_file']=file.name
-        frames.append(df[['keyword','volume','kd','intent','cpc','source_file']])
-    if not frames: return pd.DataFrame()
-    out=pd.concat(frames,ignore_index=True)
-    out['key']=out.keyword.str.lower().str.replace(r'\s+',' ',regex=True).str.strip()
-    return out.sort_values('volume',ascending=False,na_position='last').drop_duplicates('key').drop(columns='key').reset_index(drop=True)
+                    df=pd.read_csv(io.StringIO(txt),sep=sep,dtype=str,keep_default_na=False)
+                    mapping={c:k for c in df.columns for k,vals in ALIASES.items() if norm(c) in vals}
+                    if 'keyword' in mapping.values():found=df.rename(columns=mapping);break
+                except (pd.errors.ParserError,ValueError):continue
+            if found is not None:break
+        if found is None:raise ValueError(f'{file.name}: no se encontró una columna Keyword/Palabra clave válida.')
+        if 'volume' not in found:raise ValueError(f'{file.name}: no se encontró Volumen/Volume. Exporta Keyword Magic Tool con métricas.')
+        found['keyword']=found.keyword.astype(str).str.strip()
+        found=found[found.keyword.ne('')].copy()
+        for k in ('volume','kd','cpc'):
+            found[k]=found[k].map(number) if k in found else float('nan')
+        if 'intent' not in found:found['intent']=''
+        found['source_file']=file.name
+        frames.append(found[['keyword','volume','kd','intent','cpc','source_file']])
+    if not frames:return pd.DataFrame(columns=['keyword','volume','kd','intent','cpc','source_file','estado_volumen'])
+    df=pd.concat(frames,ignore_index=True)
+    df['_norm']=df.keyword.map(norm).str.replace(r'\s+',' ',regex=True)
+    df=df.sort_values('volume',ascending=False,na_position='last').drop_duplicates('_norm').drop(columns='_norm')
+    df['estado_volumen']=df.volume.map(lambda v:'sin_datos' if pd.isna(v) else 'volumen_0' if v==0 else 'medido')
+    return df.reset_index(drop=True)
