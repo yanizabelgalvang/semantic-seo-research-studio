@@ -1,47 +1,24 @@
-# Semantic SEO Research Studio — prototipo 0.1
+# Semantic SEO Research Studio — Prototipo 0.2
 
-Prototipo con 4 módulos Python + interfaz Streamlit. Fuente de demanda: **solo CSV manual de Semrush**, sin API de pago.
+Aplicación exploratoria con Streamlit para CSV manuales de Semrush y análisis de Wikipedia contextual, spaCy, Wikidata y OpenAlex.
+
+## Despliegue
+
+Subir el contenido de esta carpeta a la **raíz** del repositorio GitHub (reemplazar app.py, requirements.txt y modules/). En Streamlit Community Cloud usar `main` y `app.py`, preferentemente Python 3.11. El modelo `es_core_news_sm` se instala desde requirements.txt.
+
+## Qué se corrigió
+
+- Wikipedia: búsqueda contextual y rechazo de desambiguaciones obvias como "La Seo" (catedral) para temas SEO.
+- spaCy: resultados separados y exclusión de ruido claramente ajeno.
+- Wikidata: menos solicitudes, caché y reintentos ante 429; resultados **candidatos**, no QIDs confirmados.
+- OpenAlex: identificadores, estado y pertinencia por revisar, sin atribuir validación científica.
+- Facetas: cruce exploratorio de keywords con familias de conceptos; NO estima tráfico.
+- Descarga: Markdown y ZIP con resultados y limitaciones.
 
 ## Seguridad
 
-**Esta versión NO tiene login ni almacenamiento persistente. NO desplegar públicamente ni cargar datos confidenciales en un despliegue abierto.** GitHub privado no protege por sí solo una aplicación web desplegada. El acceso privado con Google para tres usuarios y el almacenamiento persistente gratuito son una fase posterior, sujeta a verificar compatibilidad y límites del proveedor.
+**Esta versión NO tiene autenticación.** No subir CSV confidenciales en despliegues públicos. Para uso de tres personas con Google Login debe añadirse una solución real de autenticación y control de acceso antes de tratar datos privados. No almacenar secretos en GitHub.
 
-## Ejecutar localmente en Windows (PowerShell)
+## Limitaciones
 
-Recomendado Python 3.11 o 3.12:
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python -m spacy download es_core_news_sm
-streamlit run app.py
-```
-
-Abre http://localhost:8501 si no se abre automáticamente.
-
-## Flujo
-
-1. Selecciona país hispanohablante y escribe tema.
-2. Adjunta uno o más CSV de Semrush Keyword Magic Tool.
-3. Confirma manualmente que el país de los CSV coincide con el elegido.
-4. Ejecuta NLP: descarga extractos de Wikipedia, usa spaCy para entidades y sintagmas, busca candidatos en Wikidata y literatura en OpenAlex.
-5. Descarga CSV y ZIP con resultados.
-
-## Limitaciones explícitas
-
-- Prototipo de las cuatro capas; **no** es una reproducción completa de la metodología del artículo.
-- Los QIDs de Wikidata son **candidatos**; requieren desambiguación antes de presentarse como verificados.
-- No incluye SERP, corpus de competidores, jerarquía académica profunda, cruce completo facetas × demanda, scoring SEO ni briefs.
-- Si el CSV no contiene país, el usuario debe confirmarlo. Las métricas de Semrush son estimaciones.
-- Las consultas a Wikipedia, Wikidata y OpenAlex dependen de red y pueden tener límites.
-- No hay persistencia en servidor: descarga tus resultados.
-- Los archivos de origen no se incluyen en el ZIP generado; guarda tus exportaciones originales.
-
-## Siguientes fases
-
-1. Validar importación con un CSV real de Semrush (sin subirlo a GitHub).
-2. Mejorar corpus, desambiguación y cruce facetas × demanda.
-3. Incorporar Google OpenID Connect con allowlist de tres correos, almacenamiento privado y controles de acceso a datos.
-4. Desplegar en un alojamiento que soporte privacidad, memoria para spaCy y cuotas gratuitas verificadas.
+No implementa todavía clustering SEO basado en SERP, verificación automática de entidades Wikidata ni evaluación científica completa. La selección de Wikipedia está especialmente afinada para consultas de SEO; otros sectores pueden requerir vocabulario contextual específico. Las APIs abiertas pueden bloquear o limitar solicitudes y esos errores se muestran en las tablas.
