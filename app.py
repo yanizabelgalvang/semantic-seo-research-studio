@@ -10,7 +10,7 @@ from modules.openalex import search
 COUNTRIES=['Perú','Colombia','México','Argentina','Chile','Bolivia','Ecuador','Uruguay','Paraguay','Venezuela','Costa Rica','Panamá','Guatemala','El Salvador','Honduras','Nicaragua','República Dominicana','Cuba']
 st.set_page_config(page_title='Semantic SEO Research Studio',page_icon='🔎',layout='wide')
 st.title('🔎 Semantic SEO Research Studio')
-st.caption('Revisión técnica · Semrush CSV · spaCy · Wikipedia · Wikidata · OpenAlex')
+st.caption('Investigación exploratoria · Semrush CSV · spaCy · Wikipedia · Wikidata · OpenAlex')
 st.error('ACCESO NO PROTEGIDO: esta aplicación no implementa autenticación. No subas datos confidenciales ni la compartas como aplicación privada.')
 with st.sidebar:
     topic=st.text_input('Tema','Posicionamiento web')
@@ -25,8 +25,8 @@ if files:
         a.metric('Keywords',len(df));b.metric('Volumen positivo',int(df.volume.gt(0).sum()));c.metric('Volumen 0',int(df.volume.eq(0).sum()));d.metric('Sin dato',int(df.volume.isna().sum()))
         st.dataframe(df,height=250,use_container_width=True)
         detail,facets=build(df,topic)
-        st.subheader('Facetas provisionales × demanda')
-        st.info('Facetas generadas a partir de palabras de los CSV. Son etiquetas exploratorias, no clusters validados por SERP. La suma de volúmenes NO estima tráfico.')
+        st.subheader('Grupos de consultas × demanda (exploratorios)')
+        st.info('Agrupación TF-IDF sobre lemas spaCy: etiquetas tomadas de consultas representativas. NO son facetas validadas ni clusters por intención SERP. Los volúmenes sumados son descriptivos, NO tráfico potencial.')
         st.dataframe(facets,use_container_width=True)
         st.download_button('Descargar clasificación provisional',detail.to_csv(index=False).encode('utf-8-sig'),'keywords_clasificadas.csv','text/csv')
         confirmed=st.checkbox(f'Confirmo que estos CSV corresponden a {country}')
@@ -53,9 +53,9 @@ if files:
                     r['wikidata']=lookup(terms,topic)
                     r['openalex']=search([topic,f'{topic} motores de búsqueda',f'{topic} marketing digital'],topic)
             if not r['wikidata'].empty:
-                st.subheader('Wikidata: candidatos por revisar');st.dataframe(r['wikidata'])
+                st.subheader('Wikidata: candidatos por revisar');st.warning('Los QID son candidatos, no verificaciones definitivas.');st.dataframe(r['wikidata'])
             if not r['openalex'].empty:
-                st.subheader('OpenAlex: publicaciones por revisar');st.dataframe(r['openalex'])
+                st.subheader('OpenAlex: candidatos y exclusiones');st.caption('Filtrado inicial por metadatos; no confirma calidad científica ni relevancia editorial.');st.dataframe(r['openalex'])
             def table(name,n=30):
                 frame=r[name];return frame.head(n).to_markdown(index=False) if not frame.empty else 'No ejecutado / sin datos'
             report=(f'# Investigación exploratoria: {topic}\n\nMercado: {country} · Idioma: español · Demanda: CSV Semrush\n\n'
@@ -63,7 +63,7 @@ if files:
                     f'## Fuentes Wikipedia\n\n{table("sources")}\n\n## Entidades spaCy (sin validar)\n\n{table("entities")}\n\n'
                     f'## Conceptos spaCy\n\n{table("concepts")}\n\n## Wikidata (candidatos)\n\n{table("wikidata")}\n\n'
                     f'## OpenAlex (metadatos por revisar)\n\n{table("openalex")}\n\n'
-                    '## Limitaciones\n\nSin SERP real ni análisis de competidores. Los QIDs no están verificados. Las facetas son provisionales. Las publicaciones no están validadas académicamente. Volumen no equivale a tráfico potencial.\n')
+                    '## Limitaciones\n\nSin SERP real ni análisis de competidores. Los QIDs no están verificados. Los grupos TF-IDF son exploratorios, no facetas ni clusters SEO definitivos. Las publicaciones no están validadas académicamente. Volumen no equivale a tráfico potencial.\n')
             st.download_button('Descargar informe',report.encode('utf-8'),'research.md','text/markdown')
             bundle=io.BytesIO()
             with zipfile.ZipFile(bundle,'w',zipfile.ZIP_DEFLATED) as z:

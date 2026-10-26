@@ -4,3 +4,4 @@ spacy>=3.8,<3.9
 requests>=2.32,<3
 tabulate>=0.9,<1
 https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl
+scikit-learn>=1.5,<2

@@ -54,6 +54,9 @@ def analyze(documents,topic):
             value=e.text.strip(' \t\n.,;:()[]"\'')
             if len(value)<3 or not any(c.isalpha() for c in value):continue
             if value[0].islower() and len(value.split())==1 and e.label_ in ('PER','LOC'):continue
+            if norm(value) in {'segun','tambien','creacion','analitica','posicionamiento','el seo','la seo'}:continue
+            if e.label_ in ('PER','LOC') and norm(value) in {'seo','serp','sem'}:continue
+            if value.endswith(').'):continue
             ent[(value,e.label_)]+=1
         for chunk in doc.noun_chunks:
             parts=[norm(t.lemma_) for t in chunk if t.pos_ in ('NOUN','PROPN','ADJ') and not t.is_stop and not t.is_punct]
