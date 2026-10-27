@@ -40,7 +40,7 @@ def wikipedia_texts(topic,max_pages=6):
             body=page.get('extract','');name=page.get('title','')
             if len(body)<200 or 'disambiguation' in page.get('pageprops',{}):rejected.append((name,'poco_texto_o_desambiguacion'));continue
             context=norm(name+' '+body[:2000]);matched=sum(1 for x in terms if re.search(r'\b'+re.escape(x)+r'\b',context))
-            if matched<2:rejected.append((name,'contexto_insuficiente'));continue
+            if matched<2 or (('seo' in norm(topic) or 'posicionamiento web' in norm(topic)) and not any(w in context for w in ('motor de busqueda','motores de busqueda','buscadores','search engine optimization','optimizacion en buscadores'))):rejected.append((name,'contexto_insuficiente'));continue
             results.append({'titulo':name,'texto':body,'url':'https://es.wikipedia.org/wiki/'+quote(name.replace(' ','_')),'coincidencias':matched,'fuente':'Wikipedia'})
             if len(results)>=max_pages:break
         if len(results)>=max_pages:break
@@ -53,6 +53,8 @@ def analyze(documents,topic):
         for e in doc.ents:
             value=e.text.strip(' \t\n.,;:()[]"\'')
             if len(value)<3 or not any(c.isalpha() for c in value):continue
+            if len(value.split())>5 or e.start_char>len(source['texto']):continue
+            if any(t.pos_ in ('VERB','AUX') for t in e):continue
             if value[0].islower() and len(value.split())==1 and e.label_ in ('PER','LOC'):continue
             if norm(value) in {'segun','tambien','creacion','analitica','posicionamiento','el seo','la seo'}:continue
             if e.label_ in ('PER','LOC') and norm(value) in {'seo','serp','sem'}:continue
