@@ -1,15 +1,9 @@
-# Semantic SEO Research Studio — investigación semántica
+# Semantic SEO Research Studio — entrega Excel + PDF
 
-Aplicación Streamlit para **CSV manuales de Semrush**, Python/spaCy, Wikipedia, Wikidata y OpenAlex. **SERP y competidores opcionales**; no son requisito del núcleo de cuatro capas.
+Aplicación Streamlit con datos de demanda exclusivamente desde CSV de Semrush.
 
-## Instalación
+**Dos entregables separados:** (1) Excel completo con resumen y hojas de datos; (2) PDF editorial con brief preliminar y propuestas de arquitectura de URLs. La SERP y competidores son opcionales.
 
-`pip install -r requirements.txt` y `streamlit run app.py`.
+**Avisos:** la app aún no tiene acceso privado implementado. No cargues datos confidenciales en una URL pública. Los clusters, QIDs y publicaciones académicas siguen siendo candidatos y no se anuncian como verificados. Las URLs propuestas son hipótesis hasta analizar el sitio existente.
 
-## Alcance y límites
-
-La investigación ofrece facetas e hipótesis; no sustituye el análisis de intención y de resultados de búsqueda para decidir URLs. Wikidata y OpenAlex pueden devolver candidatos ambiguos. El reporte ejecutivo evita incluir textos completos de terceros. Los CSV completos se mantienen como respaldo.
-
-## Privacidad
-
-**No se ha implementado autenticación.** No subas CSV confidenciales ni publiques la app como herramienta privada para el equipo hasta protegerla con acceso autorizado.
+Para desplegar: subir el contenido a la raíz de GitHub; revisar los logs de instalación. `artifact-tool` puede necesitar ajustes de versión/compatibilidad en Streamlit Community Cloud.

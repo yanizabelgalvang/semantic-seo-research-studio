@@ -82,10 +82,24 @@ if files:
             report=f"""# Investigación semántica: {topic}\n\n**Mercado:** {country} · **Idioma:** español · **Demanda:** CSV Semrush\n\n## Resumen de cobertura\n- Keywords importadas: {len(df)}\n- Keywords relacionadas léxicamente: {len(relevant)} (no validadas por SERP)\n- Fuentes Wikipedia aceptadas: {len(r['sources'])}\n- Entidades NLP candidatas: {len(r['entities'])}\n- Conceptos lingüísticos: {len(r['concepts'])}\n\n## Demanda relevante (muestra)\n{brief('relevant',20)}\n\n## Facetas × demanda (hipótesis)\n{brief('facetas',20)}\n\n## Corpus Wikipedia\n{brief('sources',20)}\n\n## Conceptos NLP\n{brief('concepts',25)}\n\n## Wikidata: candidatos, no verificaciones\n{brief('wikidata',15)}\n\n## OpenAlex: candidatos académicos\n{brief('openalex',15)}\n\n## SERP opcional\n{brief('serp',10)}\n\n## Limitaciones y siguiente etapa\nLa SERP y el análisis de competidores son **opcionales**. Los grupos son hipótesis semánticas, no clusters definitivos ni decisiones de URL. Los QIDs no se consideran verificados automáticamente. OpenAlex aporta candidatos cuya evidencia requiere lectura. El volumen de búsqueda no equivale a tráfico potencial.\n"""
             st.subheader('6. Informe ejecutivo')
             st.markdown('El informe muestra resúmenes; los datos completos se conservan en el ZIP técnico.')
-            st.download_button('Descargar informe legible',report.encode(),'semantic_report.md','text/markdown')
+            st.markdown('### Entregables finales')
+            st.caption('1) Excel completo de investigación. 2) PDF independiente con brief y arquitectura provisional.')
+            domain=st.text_input('Dominio del proyecto (opcional, para proponer rutas)',key='report_domain',placeholder='ejemplo.com')
+            existing_urls=st.text_area('URLs existentes (opcional, una por línea; no se verifican automáticamente)',key='report_urls',height=90)
+            if st.button('Preparar Excel y PDF',key='generate_outputs'):
+                with st.spinner('Generando ambos informes...'):
+                    try:
+                        st.session_state['deliverables']={'key':key,'xlsx':excel_report(r),'pdf':editorial_pdf(r,domain,existing_urls)}
+                    except Exception as err:
+                        st.error(f'No se pudieron generar los informes: {type(err).__name__}: {err}')
+            deliver=st.session_state.get('deliverables')
+            if deliver and deliver['key']==key:
+                st.download_button('Descargar investigación completa · Excel',deliver['xlsx'],'investigacion_semantica.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                st.download_button('Descargar brief y arquitectura · PDF',deliver['pdf'],'brief_arquitectura_seo.pdf','application/pdf')
+
             buf=io.BytesIO()
             with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
-                z.writestr('semantic_report.md',report)
+                # Markdown is no longer a user-facing report; keep raw CSV evidence only.
                 for name in ('keywords','facetas','clasificacion','sources','rejected','entities','concepts','serp','competidores','wikidata','openalex'):
                     z.writestr(name+'.csv',r[name].drop(columns=['texto'],errors='ignore').to_csv(index=False))
             st.download_button('Descargar respaldo técnico',buf.getvalue(),'semantic_research.zip','application/zip')
