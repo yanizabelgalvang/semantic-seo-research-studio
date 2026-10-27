@@ -8,6 +8,7 @@ from modules.wikidata import lookup
 from modules.openalex import search
 from modules.competidores import read_serp_csv,fetch_competitors
 from modules.quality import curate_sources,curate_entities
+from modules.deliverables import excel_report, editorial_pdf
 COUNTRIES=['Perú','Colombia','México','Argentina','Chile','Bolivia','Ecuador','Uruguay','Paraguay','Venezuela','Costa Rica','Panamá','Guatemala','El Salvador','Honduras','Nicaragua','República Dominicana','Cuba']
 st.set_page_config(page_title='Semantic SEO Research Studio',page_icon='🔎',layout='wide')
 st.title('🔎 Semantic SEO Research Studio')

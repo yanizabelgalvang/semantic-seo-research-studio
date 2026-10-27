@@ -2,7 +2,10 @@
 from io import BytesIO
 from html import escape
 import re
-from artifact_tool import Workbook, SpreadsheetFile
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.utils import get_column_letter
+from openpyxl.chart import BarChart, Reference
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, PageBreak
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -13,43 +16,65 @@ NAVY='#10103F'; CYAN='#16C6DD'; PURPLE='#7D3CE6'; PINK='#EF258E'
 DATA_KEYS=['keywords','clasificacion','facetas','sources','rejected','entities','concepts','wikidata','openalex','serp','competidores']
 
 def excel_report(run):
-    wb=Workbook.create(); sh=wb.worksheets.add('Resumen ejecutivo')
-    sh.merge_cells('A1:H2'); sh.get_range('A1').values=[['INVESTIGACION SEMANTICA | '+run['topic']]]
-    sh.get_range('A1:H2').format={'fill':NAVY,'font':{'color':'#FFFFFF','bold':True,'size':17}}
-    sh.merge_cells('A4:H4');sh.get_range('A4').values=[[run['country']+' | Español | Demanda CSV Semrush']]
-    sh.get_range('A4:H4').format={'fill':'#E8F8FC','font':{'color':NAVY,'bold':True}}
-    for i,(label,key) in enumerate([('Keywords','keywords'),('Facetas provisionales','facetas'),('Fuentes','sources'),('Entidades','entities'),('Conceptos','concepts'),('Wikidata candidatos','wikidata'),('OpenAlex candidatos','openalex')]):
-        row=6+i*2
-        sh.merge_cells(f'A{row}:D{row}');sh.merge_cells(f'E{row}:H{row}')
-        sh.get_range(f'A{row}').values=[[label]];sh.get_range(f'E{row}').values=[[len(run.get(key,[]))]]
-        sh.get_range(f'A{row}:D{row}').format={'fill':'#F1F0F8','font':{'color':NAVY,'bold':True}}
-        sh.get_range(f'E{row}:H{row}').format={'fill':'#F1F0F8','font':{'color':PURPLE,'bold':True,'size':14}}
-    sh.merge_cells('A22:H24');sh.get_range('A22').values=[['Datos y facetas exploratorios. La propuesta editorial no sustituye validacion de SERP, canibalizacion ni inventario de URLs.']]
-    sh.get_range('A22:H24').format={'fill':'#FCEAF4','font':{'color':NAVY},'wrap_text':True}
-    sh.get_range('A:H').format.column_width=16
+    """Genera XLSX en memoria, compatible con Streamlit Community Cloud."""
+    wb = Workbook()
+    sh = wb.active
+    sh.title = 'Resumen ejecutivo'
+    sh.merge_cells('A1:H2')
+    sh['A1'] = 'INVESTIGACIÓN SEMÁNTICA | ' + str(run['topic'])
+    sh['A1'].font = Font(name='Aptos Display', size=17, bold=True, color='FFFFFF')
+    sh['A1'].alignment = Alignment(vertical='center')
+    for row in sh['A1:H2']:
+        for cell in row: cell.fill = PatternFill('solid', fgColor=NAVY[1:])
+    sh.merge_cells('A4:H4')
+    sh['A4'] = str(run['country']) + ' | Español | Demanda CSV Semrush'
+    sh['A4'].font = Font(bold=True, color=NAVY[1:])
+    sh['A4'].fill = PatternFill('solid', fgColor='E8F8FC')
+    measures = [('Keywords','keywords'),('Facetas provisionales','facetas'),('Fuentes','sources'),('Entidades','entities'),('Conceptos','concepts'),('Wikidata candidatos','wikidata'),('OpenAlex candidatos','openalex')]
+    for i,(label,key) in enumerate(measures):
+        row = 6 + i*2
+        sh.merge_cells(start_row=row,start_column=1,end_row=row,end_column=4)
+        sh.merge_cells(start_row=row,start_column=5,end_row=row,end_column=8)
+        sh.cell(row,1,label)
+        sh.cell(row,5,len(run.get(key,[])))
+        for col in range(1,9):
+            sh.cell(row,col).fill = PatternFill('solid',fgColor='F1F0F8')
+        sh.cell(row,1).font = Font(bold=True,color=NAVY[1:])
+        sh.cell(row,5).font = Font(bold=True,size=14,color=PURPLE[1:])
+    sh.merge_cells('A22:H24')
+    sh['A22']='Facetas y QIDs exploratorios. El informe editorial no sustituye validación de intención, canibalización ni inventario de URLs.'
+    sh['A22'].alignment=Alignment(wrap_text=True,vertical='center')
+    sh['A22'].fill=PatternFill('solid',fgColor='FCEAF4')
+    for col in range(1,9): sh.column_dimensions[get_column_letter(col)].width=16
+    sh.sheet_view.showGridLines=False
     for key in DATA_KEYS:
         frame=run.get(key)
-        if frame is None:continue
-        ws=wb.worksheets.add(key[:31]); cols=list(frame.columns) if len(frame.columns) else ['estado']
-        ws.get_range_by_indexes(0,0,1,len(cols)).values=[cols]
-        ws.get_range_by_indexes(0,0,1,len(cols)).format={'fill':NAVY,'font':{'color':'#FFFFFF','bold':True}}
-        ws.get_range_by_indexes(0,0,1,len(cols)).format.column_width=26
-        ws.freeze_panes.freeze_rows(1)
-        if len(frame):
-            data=[]
-            for row in frame.itertuples(index=False,name=None):
-                data.append([str(v)[:16000] if v is not None and str(v)!='nan' else None for v in row])
-            # block writes to avoid excessive RPC payloads
-            for start in range(0,len(data),300):
-                chunk=data[start:start+300]
-                ws.get_range_by_indexes(start+1,0,len(chunk),len(cols)).values=chunk
-    import tempfile,os
-    fd,path=tempfile.mkstemp(suffix='.xlsx');os.close(fd)
-    try:
-        SpreadsheetFile.export_xlsx(wb).save(path)
-        with open(path,'rb') as f:return f.read()
-    finally:
-        os.unlink(path)
+        if frame is None: continue
+        ws=wb.create_sheet(key[:31]); ws.sheet_view.showGridLines=False
+        columns=list(frame.columns) if len(frame.columns) else ['estado']
+        ws.append(columns)
+        for cell in ws[1]:
+            cell.fill=PatternFill('solid',fgColor=NAVY[1:]);cell.font=Font(bold=True,color='FFFFFF')
+            cell.alignment=Alignment(wrap_text=True)
+        ws.row_dimensions[1].height=28
+        for row in frame.itertuples(index=False,name=None):
+            values=[]
+            for v in row:
+                if v is None or str(v).lower() in ('nan','nat','none'): values.append(None)
+                elif isinstance(v,(int,float,bool)): values.append(v)
+                else:
+                    value=str(v)[:32000]
+                    # Evitar que textos de CSV externos se interpreten como fórmulas.
+                    if value.startswith(('=','+','-','@')): value="'"+value
+                    values.append(value)
+            ws.append(values)
+        for idx,col in enumerate(columns,1):
+            ws.column_dimensions[get_column_letter(idx)].width=min(48,max(16,len(str(col))+4))
+        ws.freeze_panes='A2'
+        ws.auto_filter.ref=ws.dimensions
+    buffer=BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
 
 def editorial_plan(run,domain='',existing_urls=''):
     """Editorial hypotheses, not verified page decisions."""
