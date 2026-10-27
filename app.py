@@ -26,8 +26,10 @@ if files:
         st.dataframe(df,height=250,use_container_width=True)
         detail,facets=build(df,topic)
         st.subheader('Grupos de consultas × demanda (exploratorios)')
-        st.info('Agrupación TF-IDF sobre lemas spaCy: etiquetas tomadas de consultas representativas. NO son facetas validadas ni clusters por intención SERP. Los volúmenes sumados son descriptivos, NO tráfico potencial.')
+        st.info('Agrupación heurística por necesidad expresada. No es clustering validado por SERP. «Intención por verificar» conserva las consultas ambiguas sin forzarlas. Los volúmenes sumados son descriptivos, NO tráfico potencial.')
         st.dataframe(facets,use_container_width=True)
+        pending=int(detail['grupo'].eq('Intención por verificar').sum())
+        if pending: st.warning(f'{pending} consultas requieren revisión de intención; no se asignan automáticamente a un cluster editorial.')
         st.download_button('Descargar clasificación provisional',detail.to_csv(index=False).encode('utf-8-sig'),'keywords_clasificadas.csv','text/csv')
         confirmed=st.checkbox(f'Confirmo que estos CSV corresponden a {country}')
         fingerprint=hashlib.sha256((topic+country+''.join(f.name+hashlib.sha256(f.getvalue()).hexdigest() for f in files)).encode()).hexdigest()
@@ -53,7 +55,7 @@ if files:
                     r['wikidata']=lookup(terms,topic)
                     r['openalex']=search([topic,f'{topic} motores de búsqueda',f'{topic} marketing digital'],topic)
             if not r['wikidata'].empty:
-                st.subheader('Wikidata: candidatos por revisar');st.warning('Los QID son candidatos, no verificaciones definitivas.');st.dataframe(r['wikidata'])
+                st.subheader('Wikidata: candidatos por revisar');st.warning('Los QID son candidatos, no verificaciones definitivas. Los descartados por contexto no deben usarse como entidades.');st.dataframe(r['wikidata'])
             if not r['openalex'].empty:
                 st.subheader('OpenAlex: candidatos y exclusiones');st.caption('Filtrado inicial por metadatos; no confirma calidad científica ni relevancia editorial.');st.dataframe(r['openalex'])
             def table(name,n=30):
