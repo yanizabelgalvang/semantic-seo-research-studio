@@ -1,4 +1,5 @@
 """Two separate outputs: complete research XLSX and provisional editorial PDF."""
+import pandas as pd
 from io import BytesIO
 from html import escape
 import re
@@ -13,7 +14,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.units import cm
 
 NAVY='#10103F'; CYAN='#16C6DD'; PURPLE='#7D3CE6'; PINK='#EF258E'
-DATA_KEYS=['keywords','clasificacion','facetas','sources','rejected','entities','concepts','wikidata','openalex','serp','competidores']
+DATA_KEYS=['keywords','clasificacion','facetas','sources','rejected','entities','concepts','wikidata','openalex','serp','competidores','questions','matriz','sitemap','arquitectura','brief','entidades_revisadas']
 
 def excel_report(run):
     """Genera XLSX en memoria, compatible con Streamlit Community Cloud."""
@@ -125,3 +126,53 @@ def editorial_pdf(run,domain='',existing_urls=''):
         canvas.setFont('Helvetica',8);canvas.setFillColor(colors.HexColor(NAVY));canvas.drawString(1.8*cm,.9*cm,'INVESTIGACION SEMANTICA  |  INFORME EDITORIAL');canvas.drawRightString(19.2*cm,.9*cm,str(doc.page))
     doc.build(story,onFirstPage=footer,onLaterPages=footer)
     return out.getvalue()
+
+def full_excel(run):
+    """Workbook includes evidence per heading and the complete technical tables."""
+    return excel_report(run)
+
+def editorial_pdf_v2(run):
+    """Editorial PDF: one section per proposed page with source-by-source heading matrix."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle, PageBreak, KeepTogether
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import os
+    font='/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+    bold='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+    if os.path.isfile(font) and 'StudioSans' not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont('StudioSans',font));pdfmetrics.registerFont(TTFont('StudioBold',bold))
+    family='StudioSans' if 'StudioSans' in pdfmetrics.getRegisteredFontNames() else 'Helvetica'
+    heavy='StudioBold' if family=='StudioSans' else 'Helvetica-Bold'
+    body=ParagraphStyle('body_studio',fontName=family,fontSize=8.4,leading=12,spaceAfter=7,textColor=colors.HexColor('#17244C'))
+    heading=ParagraphStyle('head_studio',parent=body,fontName=heavy,fontSize=13,leading=17,spaceBefore=13,textColor=colors.HexColor('#10103F'))
+    tiny=ParagraphStyle('tiny_studio',parent=body,fontSize=7,leading=10)
+    white=ParagraphStyle('white_studio',parent=tiny,fontName=heavy,textColor=colors.white)
+    pages=run.get('arquitectura',pd.DataFrame());brief=run.get('brief',pd.DataFrame())
+    bio=BytesIO(); doc=SimpleDocTemplate(bio,pagesize=A4,rightMargin=1.5*cm,leftMargin=1.5*cm,topMargin=1.6*cm,bottomMargin=1.5*cm)
+    story=[Paragraph('INFORME EDITORIAL · ARQUITECTURA Y BRIEFS',heading),Paragraph(escape(str(run['topic']))+' · '+escape(str(run['country'])),body),Spacer(1,8)]
+    story.append(Paragraph('Alcance y controles',heading))
+    story.append(Paragraph('Propuestas basadas en Semrush Keywords + Questions, Wikipedia, spaCy, Wikidata y OpenAlex. El sitemap permite localizar URLs candidatas, pero NO valida el contenido ni demuestra canibalización. Las fuentes académicas pendientes de lectura no respaldan afirmaciones definitivas.',body))
+    if pages is None or pages.empty:story.append(Paragraph('No se generaron propuestas de páginas.',body))
+    else:
+        story.append(Paragraph('Mapa de páginas',heading))
+        data=[[Paragraph(x,white) for x in ('Tipo','Faceta','Consulta semilla','Acción')]]
+        for _,p in pages.head(30).iterrows():
+            data.append([Paragraph(escape(str(p[k]))[:95],tiny) for k in ('tipo','faceta','consulta_semilla','accion')])
+        t=LongTable(data,colWidths=[2*cm,4*cm,6*cm,4.2*cm],repeatRows=1,hAlign='LEFT')
+        t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#10103F')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#EDF8FB')]),('VALIGN',(0,0),(-1,-1),'TOP'),('BOTTOMPADDING',(0,0),(-1,-1),7),('TOPPADDING',(0,0),(-1,-1),7)]));story.append(t)
+    if brief is not None and not brief.empty:
+        for page,group in brief.groupby('pagina',sort=False):
+            story.append(PageBreak());story.append(Paragraph('BRIEF · '+escape(str(page)),heading))
+            data=[[Paragraph(x,white) for x in ('Bloque / encabezado','Qué desarrolla','De dónde sale')]]
+            for _,r in group.iterrows():
+                data.append([Paragraph(escape(str(r['bloque'])+' · '+str(r['encabezado']))[:230],tiny),Paragraph(escape(str(r['que_desarrolla']))[:330],tiny),Paragraph(escape(str(r['de_donde_sale']))[:330]+'<br/><font color="#8D2670">'+escape(str(r['estado_fuente']))+'</font>',tiny)])
+            table=LongTable(data,colWidths=[5.3*cm,5.7*cm,5.2*cm],repeatRows=1,hAlign='LEFT')
+            table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#10103F')),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F1F0F8')]),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),('TOPPADDING',(0,0),(-1,-1),7),('BOTTOMPADDING',(0,0),(-1,-1),7)]))
+            story.append(table)
+    doc.build(story)
+    return bio.getvalue()
