@@ -40,3 +40,7 @@ Usa Python 3.11 y `pip install -r requirements.txt`, luego `streamlit run app.py
 
 ## Pruebas
 `python -m pytest -q` (16 pruebas locales, incluidas generación XLSX y PDF; sin validación de APIs en vivo).
+
+
+## Inventario de URLs en CSV
+La aplicación acepta CSV de extractores de sitemap, XML y XML.GZ. Para CSV se requiere una columna `url` (también `loc`, `Address`, `Dirección`); reconoce `source`, `lastmod`, `changefreq` y `priority` como opcionales. El CSV se procesa sin llamadas a APIs de Semrush. El importador conserva URLs únicas HTTP/HTTPS y no interpreta la ausencia de una URL como prueba de que no existe. Los índices XML de sitemaps requieren exportar los sitemaps hijos o el CSV consolidado.
